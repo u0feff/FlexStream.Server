@@ -1,2 +1,5 @@
 openvpn/certs/
 openvpn/easy-rsa/
+3proxy/auth.txt
+stunnel/certs/
+config.tar.gz

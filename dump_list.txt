@@ -1,0 +1,15 @@
+3proxy/auth.txt | 3proxy/auth.txt
+
+openvpn/certs/tls-crypt.key | openvpn/certs/tls-crypt.key
+openvpn/certs/main/ca.crt | openvpn/certs/main/ca.crt
+openvpn/certs/main/crl.pem | openvpn/certs/main/crl.pem 
+openvpn/certs/main/server.crt | openvpn/certs/main/server.crt
+openvpn/certs/main/server.key | openvpn/certs/main/server.key
+openvpn/certs/vk/ca.crt | openvpn/certs/vk/ca.crt
+openvpn/certs/vk/server.crt | openvpn/certs/vk/server.crt
+openvpn/certs/vk/server.key | openvpn/certs/vk/server.key
+
+stunnel/certs/server.crt | stunnel/certs/server.crt
+stunnel/certs/server.key | stunnel/certs/server.key
+stunnel/certs/clients/ca/ | stunnel/certs/clients/ca/
+stunnel/certs/clients/crl/ | stunnel/certs/clients/crl/
