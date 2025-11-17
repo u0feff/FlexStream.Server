@@ -1,9 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+source tls.sh
+
 ensure_easyrsa_installed() {
     if [[ ! -d easy-rsa/ ]]; then
-        version="3.1.2"
+        local version="3.1.2"
 
         echo "Downloading easy-rsa"
 
@@ -25,36 +27,35 @@ easyrsa() {
     EASYRSA_PKI=certs/main/pki easy-rsa/easyrsa "$@"
 }
 
-gen_tls_key() {
-    if [[ ! -f certs/tls-crypt.key ]]; then
-        openvpn --genkey --secret certs/tls-crypt.key
-    fi
-}
-
 gen() {
+    if [[ -d "certs/main" ]]; then
+        echo "Certificates already generated" >&2
+        return 1
+    fi
+
     mkdir -p certs/main
+
+    gen_tls_key
 
     easyrsa init-pki
 
-    SERVER_CN="cn_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"
-    SERVER_NAME="server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"
+    local server_cn="cn_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"
+    local server_name="server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)"
 
-    EASYRSA_CA_EXPIRE=3650 easyrsa --batch --req-cn="$SERVER_CN" build-ca nopass
-    EASYRSA_CERT_EXPIRE=3650 easyrsa --batch build-server-full "$SERVER_NAME" nopass
+    EASYRSA_CA_EXPIRE=3650 easyrsa --batch --req-cn="$server_cn" build-ca nopass
+    EASYRSA_CERT_EXPIRE=3650 easyrsa --batch build-server-full "$server_name" nopass
     EASYRSA_CRL_DAYS=3650 easyrsa gen-crl
-
-    gen_tls_key
 
     ln -s pki/ca.crt certs/main/ca.crt 
     ln -s pki/private/ca.key certs/main/ca.key
     ln -s pki/crl.pem certs/main/crl.pem
-    ln -s pki/issued/$SERVER_NAME.crt certs/main/server.crt
-    ln -s pki/private/$SERVER_NAME.key certs/main/server.key
+    ln -s pki/issued/$server_name.crt certs/main/server.crt
+    ln -s pki/private/$server_name.key certs/main/server.key
 }
 
 
 create_client() {
-    name=$1
+    local name=$1
 
     exists=$(tail -n +2 certs/main/pki/index.txt | grep -c -E "/CN=$name\$" || true)
     if [[ $exists == '1' ]]; then
@@ -66,6 +67,8 @@ create_client() {
 }
 
 ensure_client_exists() {
+    local name=$1
+
     exists=$(tail -n +2 certs/main/pki/index.txt | grep "^V" | grep -c -E "/CN=$name\$" || true)
     if [[ $exists == '0' ]]; then
         echo "Specified client CN not exists" >&2
@@ -74,11 +77,14 @@ ensure_client_exists() {
 }
 
 show_client_ovpn() {
-    name=$1
+    local name=$1
 
     ensure_client_exists $name
 
     cat client-template.txt
+
+    local server_cn="$(openssl x509 -in "certs/main/server.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=//; s/.*CN=\([^,\/]*\).*/\1/p')"
+    echo "verify-x509-name $server_cn name"
 
     echo "<ca>"
     cat "certs/main/ca.crt"
@@ -102,7 +108,7 @@ list_clients() {
 }
 
 revoke_client() {
-    name=$1
+    local name=$1
 
     ensure_client_exists $name
 
