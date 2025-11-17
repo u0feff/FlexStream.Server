@@ -15,7 +15,6 @@ nobind
 persist-key
 persist-tun
 remote-cert-tls server
-verify-x509-name server_wNv1nOkBFPtfsvnJ name
 auth SHA256
 auth-nocache
 cipher AES-128-GCM
