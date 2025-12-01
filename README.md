@@ -1,18 +1,11 @@
-# OpenVPN network
+# Network plan
 
 ```
-host:
-1..9 - reserved
-10 - aliases
-11..20 - internal
-21..199 - public
-200 - internal routes
-
 IPv4 schema:
   10.host.server[3]network[3]host[2].host
 
-+-+ 10.10.0.0/16                      #+-+ VPN alias
-| +-- 10.10.0.1                       #| +-- Gateway
++-+ 10.10.0.0/16                      #+-+ Aliases
+| +-- 10.10.0.1                       #| +-- VPN gateway
 |                                     #|
 +-+ 10.i.0.0/16                       #+-+ VPN
   +-+ 10.i.0.0/19                     #  +-+ TCP server
@@ -37,8 +30,8 @@ IPv4 schema:
 IPv6 schema:
   fd42:host:server::network:subnetwork:host
 
-+-+ fd42:10:0::0:0:0/48               #+-+ VPN alias
-| +-- fd42:10:0::0:0:1                #| +-- Gateway
++-+ fd42:10:0::0:0:0/48               #+-+ Aliases
+| +-- fd42:10:0::0:0:1                #| +-- VPN gateway
 |                                     #|
 +-+ fd42:i:0::0:0:0/48                #--+ VPN
   +-+ fd42:i:0::0:0:0/64              #  +-+ TCP server
@@ -59,4 +52,11 @@ IPv6 schema:
     +-+ fd42:i:2::0:0:0/96            #    +-+ Public
       +-- fd42:i:2::0:0:1             #      +-- Gateway
       +-- fd42:i:2::0:1:0/112         #      +-- DHCP pool
+
+Host:
+1..9 - reserved
+10 - aliases
+11..20 - internal
+21..199 - public
+200 - internal routes
 ```
