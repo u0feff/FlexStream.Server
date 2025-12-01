@@ -1,31 +1,3 @@
-# Dump tree
-
-```
-.
-├── config.sh
-├── 3proxy
-│   └── auth.txt
-├── openvpn
-│   └── certs
-│       ├── tls-crypt.key
-│       ├── main
-│       │   ├── ca.crt
-│       │   ├── crl.pem
-│       │   ├── server.crt
-│       │   └── server.key
-│       └── vk
-│           ├── ca.crt
-│           ├── server.crt
-│           └── server.key
-└── stunnel
-    └── certs
-        ├── server.crt
-        ├── server.key
-        └── clients
-            ├── ca/*.crt
-            └── crl/*.crt
-```
-
 # OpenVPN network
 
 ```
@@ -34,6 +6,7 @@ host:
 10 - aliases
 11..20 - internal
 21..199 - public
+200 - internal routes
 
 IPv4 schema:
   10.host.server[3]network[3]host[2].host
