@@ -2,7 +2,7 @@
 
 ```
 IPv4 schema:
-  10.host.server[3]network[3]host[2].host
+  10.node.server[3]network[3]host[2].host
 
 +-+ 10.10.0.0/16                      #+-+ Aliases
 | +-- 10.10.0.1                       #| +-- VPN gateway
@@ -28,7 +28,7 @@ IPv4 schema:
       +-- 10.i.64.100 - 10.i.64.200   #      +-- DHCP pool
 
 IPv6 schema:
-  fd42:host:server::network:subnetwork:host
+  fd42:node:server::network:subnetwork:host
 
 +-+ fd42:10:0::0:0:0/48               #+-+ Aliases
 | +-- fd42:10:0::0:0:1                #| +-- VPN gateway
@@ -53,7 +53,7 @@ IPv6 schema:
       +-- fd42:i:2::0:0:1             #      +-- Gateway
       +-- fd42:i:2::0:1:0/112         #      +-- DHCP pool
 
-Host:
+Node id:
 1..9 - reserved
 10 - aliases
 11..20 - internal
