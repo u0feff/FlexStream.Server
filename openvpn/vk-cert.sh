@@ -1,78 +1,84 @@
 #!/bin/bash
 set -euo pipefail
 
-source tls.sh
+SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]:-$0}")"
+
+source "$SCRIPT_DIR/tls-key.sh"
 
 gen() {
-    if [[ -d "certs/vk" ]]; then
+    if [[ -f "$CERTS_DIR/ca.key" ]]; then
         echo "Certificates already generated" >&2
         return 1
     fi
 
-    mkdir -p certs/vk
+    mkdir -p "$CERTS_DIR"
+
+    trap 'rm -rf "$CERTS_DIR"' EXIT
 
     gen_tls_key
 
     # Generate CA private key (ECC P-256)
-    openssl ecparam -genkey -name prime256v1 -out certs/vk/ca.key
+    openssl ecparam -genkey -name prime256v1 -out "$CERTS_DIR/ca.key"
 
     # Generate CA certificate
-    openssl req -new -x509 -key certs/vk/ca.key -out certs/vk/ca.crt -days 3650 -config vk-ca.conf -extensions v3_ca
+    openssl req -new -x509 -key "$CERTS_DIR/ca.key" -out "$CERTS_DIR/ca.crt" -days 3650 -config "$SCRIPT_DIR/vk-ca.conf" -extensions v3_ca
 
     # Generate server private key (ECC P-256)
-    openssl ecparam -genkey -name prime256v1 -out certs/vk/server.key
+    openssl ecparam -genkey -name prime256v1 -out "$CERTS_DIR/server.key"
 
     # Generate server certificate signing request
-    openssl req -new -key certs/vk/server.key -out certs/vk/server.csr -config vk-server.conf
+    openssl req -new -key "$CERTS_DIR/server.key" -out "$CERTS_DIR/server.csr" -config "$SCRIPT_DIR/vk-server.conf"
 
     # Generate server certificate signed by our CA
-    openssl x509 -req -in certs/vk/server.csr -CA certs/vk/ca.crt -CAkey certs/vk/ca.key -CAcreateserial -out certs/vk/server-raw.crt -days 3650 -extensions v3_req -extfile vk-server.conf
+    openssl x509 -req -in "$CERTS_DIR/server.csr" -CA "$CERTS_DIR/ca.crt" -CAkey "$CERTS_DIR/ca.key" -CAcreateserial -out "$CERTS_DIR/server-raw.crt" -days 3650 -extensions v3_req -extfile "$SCRIPT_DIR/vk-server.conf"
 
     echo "Certificates generated. Mimicrying..."
 
     # Get original certificate
-    echo | openssl s_client -showcerts -servername stats.vk-portal.net -connect stats.vk-portal.net:443 2>/dev/null | openssl x509 -inform pem -out certs/vk/original.crt
+    echo | openssl s_client -showcerts -servername stats.vk-portal.net -connect stats.vk-portal.net:443 2>/dev/null | openssl x509 -inform pem -out "$CERTS_DIR/original.crt"
 
     # Extract SCT extension in DER format
-    openssl x509 -in certs/vk/original.crt -outform DER -out certs/vk/original.der
+    openssl x509 -in "$CERTS_DIR/original.crt" -outform DER -out "$CERTS_DIR/original.der"
 
-    python3 add_sct.py
+    CERTS_DIR="$CERTS_DIR" python3 "$SCRIPT_DIR/add_sct.py"
 
-    rm certs/vk/server.csr certs/vk/original.crt certs/vk/original.der
+    rm "$CERTS_DIR/server.csr" "$CERTS_DIR/original.crt" "$CERTS_DIR/original.der"
+
+    trap - EXIT
 }
 
 debug_show() {
     echo -e "\n=== Certificate Details ==="
-    openssl x509 -in certs/vk/server.crt -text -noout
+    openssl x509 -in "$CERTS_DIR/server.crt" -text -noout
 
     echo -e "\n=== Certificate Verification ==="
-    openssl verify -CAfile certs/vk/ca.crt certs/vk/server-raw.crt
+    openssl verify -CAfile "$CERTS_DIR/ca.crt" "$CERTS_DIR/server-raw.crt"
 
     echo -e "\n=== Certificate with SCT Verification ==="
-    openssl verify -CAfile certs/vk/ca.crt certs/vk/server.crt
+    openssl verify -CAfile "$CERTS_DIR/ca.crt" "$CERTS_DIR/server.crt"
 }
 
 create_client() {
     local name=$1
 
-    if [[ -f "certs/vk/clients/$name.crt" ]]; then
+    if [[ -f "$CERTS_DIR/clients/$name.crt" ]]; then
         echo "Specified client CN already exists" >&2
         return 1
     fi
 
-    mkdir -p certs/vk/clients
+    mkdir -p "$CERTS_DIR/clients"
 
-    openssl ecparam -genkey -name prime256v1 -out certs/vk/clients/$name.key
-    openssl req -new -key certs/vk/clients/$name.key -out certs/vk/clients/$name.csr -subj "/CN=$name"
-    openssl x509 -req -in certs/vk/clients/$name.csr -CA certs/vk/ca.crt -CAkey certs/vk/ca.key -CAcreateserial -out certs/vk/clients/$name.crt -days 365 -extfile vk-client.conf
+    openssl ecparam -genkey -name prime256v1 -out "$CERTS_DIR/clients/$name.key"
+    openssl req -new -key "$CERTS_DIR/clients/$name.key" -out "$CERTS_DIR/clients/$name.csr" -subj "/CN=$name"
+    openssl x509 -req -in "$CERTS_DIR/clients/$name.csr" -CA "$CERTS_DIR/ca.crt" -CAkey "$CERTS_DIR/ca.key" -CAcreateserial -out "$CERTS_DIR/clients/$name.crt" -days 365 -extfile "$SCRIPT_DIR/vk-client.conf"
 
-    rm certs/vk/clients/$name.csr
+    rm "$CERTS_DIR/clients/$name.csr"
 }
 
 ensure_client_exists() {
     local name=$1
 
-    if [[ ! -f "certs/vk/clients/$name.crt" ]]; then
+    if [[ ! -f "$CERTS_DIR/clients/$name.crt" ]]; then
         echo "Specified client CN not exists" >&2
         return 1
     fi
@@ -81,32 +87,36 @@ ensure_client_exists() {
 show_client_ovpn() {
     local name=$1
 
+    mkdir -p "$CERTS_DIR/clients"
+
     ensure_client_exists $name
 
-    cat client-template.txt
+    cat "$SCRIPT_DIR/client-template.txt"
 
-    local server_cn="$(openssl x509 -in "certs/vk/server.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=//; s/.*CN=\([^,\/]*\).*/\1/p')"
+    local server_cn="$(openssl x509 -in "$CERTS_DIR/server.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=//; s/.*CN=\([^,\/]*\).*/\1/p')"
     echo "verify-x509-name $server_cn name"
 
     echo "<ca>"
-    cat "certs/vk/ca.crt"
+    cat "$CERTS_DIR/ca.crt"
     echo "</ca>"
 
     echo "<cert>"
-    awk '/BEGIN/,/END CERTIFICATE/' "certs/vk/clients/$name.crt"
+    awk '/BEGIN/,/END CERTIFICATE/' "$CERTS_DIR/clients/$name.crt"
     echo "</cert>"
 
     echo "<key>"
-    cat "certs/vk/clients/$name.key"
+    cat "$CERTS_DIR/clients/$name.key"
     echo "</key>"
 
     echo "<tls-crypt>"
-    cat "certs/tls-crypt.key"
+    cat "$CONFIG_DIR/openvpn/certs/tls-crypt.key"
     echo "</tls-crypt>"
 }
 
 list_clients() {
-    ls certs/vk/clients/*.crt | xargs -n1 basename -s .crt
+    mkdir -p "$CERTS_DIR/clients"
+
+    find "$CERTS_DIR/clients" -maxdepth 1 -type f -name '*.crt' -exec basename {} .crt \;
 }
 
 usage() {
@@ -126,9 +136,16 @@ Examples:
   $0 create-client alice
   $0 show-client-ovpn alice > alice.ovpn
   $0 list-clients
-  $0 revoke alice
 EOF
 }
+
+CONFIG_DIR="${CONFIG_DIR:-/var/lib/flexstream/server}"
+
+mkdir -p "$CONFIG_DIR"
+
+CERTS_DIR="$CONFIG_DIR/openvpn/certs/vk"
+
+mkdir -p "$CERTS_DIR"
 
 if [[ $# -lt 1 ]]; then
     usage

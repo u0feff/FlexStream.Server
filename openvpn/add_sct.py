@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-import subprocess
-import sys
+import os
+from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import ExtensionOID
-import datetime
+
+CERTS_DIR = os.getenv("CERTS_DIR")
+
+if CERTS_DIR is None:
+    raise RuntimeError("CERTS_DIR not set")
 
 def load_cert(filename):
     with open(filename, 'rb') as f:
@@ -19,11 +21,11 @@ def load_private_key(filename):
         return serialization.load_pem_private_key(f.read(), password=None)
 
 # Load original certificate to extract SCT extension
-original_cert = load_cert('certs/vk/original.crt')
-basic_cert = load_cert('certs/vk/server-raw.crt')
-ca_cert = load_cert('certs/vk/ca.crt')
-ca_key = load_private_key('certs/vk/ca.key')
-server_key = load_private_key('certs/vk/server.key')
+original_cert = load_cert(os.path.join(CERTS_DIR, 'original.crt'))
+basic_cert = load_cert(os.path.join(CERTS_DIR, 'server-raw.crt'))
+ca_cert = load_cert(os.path.join(CERTS_DIR, 'ca.crt'))
+ca_key = load_private_key(os.path.join(CERTS_DIR, 'ca.key'))
+server_key = load_private_key(os.path.join(CERTS_DIR, 'server.key'))
 
 # Try to get SCT extension from original certificate
 sct_extension = None
@@ -56,5 +58,5 @@ if sct_extension:
 final_cert = builder.sign(ca_key, hashes.SHA384())
 
 # Save the final certificate
-with open('certs/vk/server.crt', 'wb') as f:
+with open(os.path.join(CERTS_DIR, 'server.crt'), 'wb') as f:
     f.write(final_cert.public_bytes(serialization.Encoding.PEM))

@@ -1,39 +1,47 @@
 #!/bin/bash
 set -euo pipefail
 
-source tls.sh
+SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]:-$0}")"
+
+source "$SCRIPT_DIR/tls-key.sh"
 
 ensure_easyrsa_installed() {
-    if [[ ! -d easy-rsa/ ]]; then
-        local version="3.1.2"
-
-        echo "Downloading easy-rsa"
-
-        wget -O easy-rsa.tgz https://github.com/OpenVPN/easy-rsa/releases/download/v${version}/EasyRSA-${version}.tgz
-        mkdir -p easy-rsa
-        tar xzf easy-rsa.tgz --strip-components=1 --no-same-owner --directory easy-rsa
-        rm -f easy-rsa.tgz
+    if [[ -d "$SCRIPT_DIR/easy-rsa/" ]]; then
+        return 0
     fi
+
+    local version="3.1.2"
+
+    echo "Downloading easy-rsa"
+
+    local tmp=$(mktemp)
+
+    trap 'rm -f "$tmp"' EXIT
+
+    wget -O "$tmp" https://github.com/OpenVPN/easy-rsa/releases/download/v${version}/EasyRSA-${version}.tgz
+    mkdir -p "$SCRIPT_DIR/easy-rsa"
+    tar xzf "$tmp" --strip-components=1 --no-same-owner --directory "$SCRIPT_DIR/easy-rsa"
 }
 
 easyrsa() {
     ensure_easyrsa_installed
 
-    if [[ -d certs/main/pki ]]; then
-        rm -f certs/main/pki/vars
-        ln -s ../../../easy-rsa-vars certs/main/pki/vars
+    if [[ -d "$CERTS_DIR/pki" ]]; then
+        cp -af "$SCRIPT_DIR/easy-rsa-vars" "$CERTS_DIR/pki/vars"
     fi
 
-    EASYRSA_PKI=certs/main/pki easy-rsa/easyrsa "$@"
+    EASYRSA_PKI="$CERTS_DIR/pki" "$SCRIPT_DIR/easy-rsa/easyrsa" "$@"
 }
 
 gen() {
-    if [[ -d "certs/main" ]]; then
+    if [[ -f "$CERTS_DIR/ca.key" ]]; then
         echo "Certificates already generated" >&2
         return 1
     fi
 
-    mkdir -p certs/main
+    mkdir -p "$CERTS_DIR"
+
+    trap 'rm -rf "$CERTS_DIR"' EXIT
 
     gen_tls_key
 
@@ -46,18 +54,19 @@ gen() {
     EASYRSA_CERT_EXPIRE=3650 easyrsa --batch build-server-full "$server_name" nopass
     EASYRSA_CRL_DAYS=3650 easyrsa gen-crl
 
-    ln -s pki/ca.crt certs/main/ca.crt 
-    ln -s pki/private/ca.key certs/main/ca.key
-    ln -s pki/crl.pem certs/main/crl.pem
-    ln -s pki/issued/$server_name.crt certs/main/server.crt
-    ln -s pki/private/$server_name.key certs/main/server.key
-}
+    ln -s pki/ca.crt "$CERTS_DIR/ca.crt"
+    ln -s pki/private/ca.key "$CERTS_DIR/ca.key"
+    ln -s pki/crl.pem "$CERTS_DIR/crl.pem"
+    ln -s pki/issued/$server_name.crt "$CERTS_DIR/server.crt"
+    ln -s pki/private/$server_name.key "$CERTS_DIR/server.key"
 
+    trap - EXIT
+}
 
 create_client() {
     local name=$1
 
-    exists=$(tail -n +2 certs/main/pki/index.txt | grep -c -E "/CN=$name\$" || true)
+    exists=$(tail -n +2 "$CERTS_DIR/pki/index.txt" | grep -c -E "/CN=$name\$" || true)
     if [[ $exists == '1' ]]; then
         echo "Specified client CN already exists" >&2
         return 1
@@ -69,7 +78,7 @@ create_client() {
 ensure_client_exists() {
     local name=$1
 
-    exists=$(tail -n +2 certs/main/pki/index.txt | grep "^V" | grep -c -E "/CN=$name\$" || true)
+    exists=$(tail -n +2 "$CERTS_DIR/pki/index.txt" | grep "^V" | grep -c -E "/CN=$name\$" || true)
     if [[ $exists == '0' ]]; then
         echo "Specified client CN not exists" >&2
         return 1
@@ -81,30 +90,30 @@ show_client_ovpn() {
 
     ensure_client_exists $name
 
-    cat client-template.txt
+    cat "$SCRIPT_DIR/client-template.txt"
 
-    local server_cn="$(openssl x509 -in "certs/main/server.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=//; s/.*CN=\([^,\/]*\).*/\1/p')"
+    local server_cn="$(openssl x509 -in "$CERTS_DIR/server.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed -n 's/^subject=//; s/.*CN=\([^,\/]*\).*/\1/p')"
     echo "verify-x509-name $server_cn name"
 
     echo "<ca>"
-    cat "certs/main/ca.crt"
+    cat "$CERTS_DIR/ca.crt"
     echo "</ca>"
 
     echo "<cert>"
-    awk '/BEGIN/,/END CERTIFICATE/' "certs/main/pki/issued/$name.crt"
+    awk '/BEGIN/,/END CERTIFICATE/' "$CERTS_DIR/pki/issued/$name.crt"
     echo "</cert>"
 
     echo "<key>"
-    cat "certs/main/pki/private/$name.key"
+    cat "$CERTS_DIR/pki/private/$name.key"
     echo "</key>"
 
     echo "<tls-crypt>"
-    cat "certs/tls-crypt.key"
+    cat "$CONFIG_DIR/openvpn/certs/tls-crypt.key"
     echo "</tls-crypt>"
 }
 
 list_clients() {
-    tail -n +2 certs/main/pki/index.txt | grep "^V" | cut -d '=' -f 2
+    tail -n +2 "$CERTS_DIR/pki/index.txt" | grep "^V" | cut -d '=' -f 2
 }
 
 revoke_client() {
@@ -133,9 +142,17 @@ Examples:
   $0 create-client alice
   $0 show-client-ovpn alice > alice.ovpn
   $0 list-clients
-  $0 revoke alice
+  $0 revoke-client alice
 EOF
 }
+
+CONFIG_DIR="${CONFIG_DIR:-/var/lib/flexstream/server}"
+
+mkdir -p "$CONFIG_DIR"
+
+CERTS_DIR="$CONFIG_DIR/openvpn/certs/main"
+
+mkdir -p "$CERTS_DIR"
 
 if [[ $# -lt 1 ]]; then
     usage
