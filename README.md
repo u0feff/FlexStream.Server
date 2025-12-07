@@ -1,4 +1,4 @@
-# Setup
+# Proxy
 
 ```bash
 adduser --system --no-create-home --group "tunnel-user"
